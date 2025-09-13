@@ -1,214 +1,378 @@
--- Serviços
+-- Painel de Habilidades para Roblox - VERSÃO COM VELOCIDADE + Noclip
+-- Coloque este script em StarterPlayer > StarterPlayerScripts
+-- Pressione G para abrir/fechar o painel
+
+print("🔄 Iniciando Painel de Habilidades...")
+
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
 local RunService = game:GetService("RunService")
-local LocalPlayer = Players.LocalPlayer
-local Mouse = LocalPlayer:GetMouse()
 
-local Character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
-local Humanoid = Character:WaitForChild("Humanoid")
-local RootPart = Character:WaitForChild("HumanoidRootPart")
+local player = Players.LocalPlayer
+local mouse = player:GetMouse()
 
--- Criando a GUI
-local ScreenGui = Instance.new("ScreenGui", LocalPlayer:WaitForChild("PlayerGui"))
-ScreenGui.Name = "PainelHabilidades"
+-- Aguardar o PlayerGui estar disponível
+local playerGui
+repeat
+    wait()
+    playerGui = player:FindFirstChild("PlayerGui")
+until playerGui
 
-local MainFrame = Instance.new("Frame")
-MainFrame.Size = UDim2.new(0, 350, 0, 500)
-MainFrame.Position = UDim2.new(0.65, 0, 0.2, 0)
-MainFrame.BackgroundColor3 = Color3.fromRGB(30,30,30)
-MainFrame.BorderSizePixel = 0
-MainFrame.Visible = false -- começa oculto
-MainFrame.Parent = ScreenGui
+print("✅ PlayerGui encontrado!")
 
-local UIListLayout = Instance.new("UIListLayout")
-UIListLayout.Parent = MainFrame
-UIListLayout.Padding = UDim.new(0, 5)
+-- Variáveis de controle
+local isGuiOpen = false
+local teleportEnabled = false
+local speedEnabled = false
+local noclipEnabled = false
+local teleportKey = "F"
+local currentSpeed = 50
+local originalWalkSpeed = 16
+local gui = nil
+local mainFrame = nil
 
--- Função auxiliar: criar botão
-local function criarBotao(nome, funcao, valorInicial)
-    local botao = Instance.new("TextButton")
-    botao.Size = UDim2.new(1, -10, 0, 40)
-    botao.BackgroundColor3 = Color3.fromRGB(150,0,0)
-    botao.TextColor3 = Color3.new(1,1,1)
-    botao.Text = nome.." [DESLIGADO]"
-    botao.Parent = MainFrame
-
-    local ativo = false
-    local valor = valorInicial or nil
-
-    local function atualizarVisual()
-        if ativo then
-            botao.BackgroundColor3 = Color3.fromRGB(0,150,0)
-            botao.Text = nome.." [LIGADO]"
-        else
-            botao.BackgroundColor3 = Color3.fromRGB(150,0,0)
-            botao.Text = nome.." [DESLIGADO]"
-        end
-    end
-
-    botao.MouseButton1Click:Connect(function()
-        ativo = not ativo
-        atualizarVisual()
-        funcao(ativo, valor)
+-- Função para criar efeito visual de teleporte
+local function createTeleportEffect(position)
+    local character = player.Character
+    if not character then return end
+    
+    local effect = Instance.new("Part")
+    effect.Name = "TeleportEffect"
+    effect.Shape = Enum.PartType.Ball
+    effect.Material = Enum.Material.Neon
+    effect.BrickColor = BrickColor.new("Bright blue")
+    effect.Size = Vector3.new(0.1, 0.1, 0.1)
+    effect.Position = position
+    effect.Anchored = true
+    effect.CanCollide = false
+    effect.Parent = workspace
+    
+    local tweenInfo = TweenInfo.new(0.5, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+    local tween = TweenService:Create(effect, tweenInfo, {
+        Size = Vector3.new(10, 10, 10),
+        Transparency = 1
+    })
+    
+    tween:Play()
+    tween.Completed:Connect(function()
+        effect:Destroy()
     end)
-
-    return {
-        botao = botao,
-        setValue = function(v) valor = v end,
-        getValue = function() return valor end,
-        isActive = function() return ativo end
-    }
 end
 
--- Função auxiliar: criar slider (valor numérico)
-local function criarSlider(nome, valorMin, valorMax, valorInicial)
-    local frame = Instance.new("Frame")
-    frame.Size = UDim2.new(1, -10, 0, 40)
-    frame.BackgroundColor3 = Color3.fromRGB(50,50,50)
-    frame.Parent = MainFrame
-
-    local label = Instance.new("TextLabel")
-    label.Size = UDim2.new(0.5, 0, 1, 0)
-    label.Position = UDim2.new(0, 0, 0, 0)
-    label.BackgroundTransparency = 1
-    label.TextColor3 = Color3.new(1,1,1)
-    label.Text = nome..": "..valorInicial
-    label.Font = Enum.Font.SourceSansBold
-    label.TextScaled = true
-    label.Parent = frame
-
-    local textbox = Instance.new("TextBox")
-    textbox.Size = UDim2.new(0.5, -5, 1, -5)
-    textbox.Position = UDim2.new(0.5, 5, 0, 0)
-    textbox.Text = tostring(valorInicial)
-    textbox.ClearTextOnFocus = false
-    textbox.TextColor3 = Color3.new(1,1,1)
-    textbox.BackgroundColor3 = Color3.fromRGB(80,80,80)
-    textbox.Parent = frame
-
-    local valor = valorInicial
-
-    textbox.FocusLost:Connect(function()
-        local n = tonumber(textbox.Text)
-        if n and n >= valorMin and n <= valorMax then
-            valor = n
-            label.Text = nome..": "..valor
-        else
-            textbox.Text = tostring(valor)
-        end
-    end)
-
-    return {
-        frame = frame,
-        getValue = function() return valor end
-    }
+-- Função de teleporte
+local function teleportToMousePosition()
+    if not teleportEnabled then return end
+    
+    local character = player.Character
+    if not character or not character:FindFirstChild("HumanoidRootPart") then return end
+    
+    local rootPart = character.HumanoidRootPart
+    local hit = mouse.Hit
+    
+    if hit then
+        local targetPosition = hit.Position + Vector3.new(0, 5, 0)
+        rootPart.CFrame = CFrame.new(targetPosition)
+        createTeleportEffect(targetPosition)
+        print("✅ Teleportado para: " .. tostring(targetPosition))
+    end
 end
 
--- Tabela de habilidades
-local habilidades = {}
-
--- Velocidade
-local velocidadeSlider = criarSlider("Velocidade", 16, 200, 50)
-habilidades["Velocidade"] = criarBotao("Velocidade", function(ativo, valor)
-    if ativo then
-        Humanoid.WalkSpeed = velocidadeSlider.getValue()
+-- Sistema de velocidade
+local function updateSpeed()
+    local character = player.Character
+    if not character then return end
+    
+    local humanoid = character:FindFirstChildOfClass("Humanoid")
+    if not humanoid then return end
+    
+    if speedEnabled then
+        humanoid.WalkSpeed = currentSpeed
+        print("💨 Velocidade alterada para: " .. currentSpeed)
     else
-        Humanoid.WalkSpeed = 16
+        humanoid.WalkSpeed = originalWalkSpeed
+        print("🚶 Velocidade restaurada para: " .. originalWalkSpeed)
     end
-end, velocidadeSlider.getValue())
+end
 
--- Atualizar velocidade continuamente se ativo
-RunService.RenderStepped:Connect(function()
-    if habilidades["Velocidade"].isActive() then
-        Humanoid.WalkSpeed = velocidadeSlider.getValue()
-    end
-end)
-
--- Pulo Alto
-local puloSlider = criarSlider("Pulo", 50, 300, 100)
-habilidades["Pulo Alto"] = criarBotao("Pulo Alto", function(ativo, valor)
-    if ativo then
-        Humanoid.JumpPower = puloSlider.getValue()
-    else
-        Humanoid.JumpPower = 50
-    end
-end, puloSlider.getValue())
-
--- Atualizar pulo continuamente
-RunService.RenderStepped:Connect(function()
-    if habilidades["Pulo Alto"].isActive() then
-        Humanoid.JumpPower = puloSlider.getValue()
-    end
-end)
-
--- Noclip
-habilidades["Noclip"] = criarBotao("Noclip", function(ativo)
-    if ativo then
-        for _, part in pairs(Character:GetDescendants()) do
-            if part:IsA("BasePart") then
-                part.CanCollide = false
-            end
-        end
-    else
-        for _, part in pairs(Character:GetDescendants()) do
-            if part:IsA("BasePart") then
-                part.CanCollide = true
-            end
+-- Sistema de noclip
+local function toggleNoclip(state)
+    noclipEnabled = state
+    local character = player.Character
+    if not character then return end
+    
+    for _, part in pairs(character:GetDescendants()) do
+        if part:IsA("BasePart") and part.Name ~= "HumanoidRootPart" then
+            part.CanCollide = not noclipEnabled
         end
     end
-end)
+end
 
--- Teleporte
-local teleKey = Enum.KeyCode.T -- padrão
-habilidades["Teleporte"] = criarBotao("Teleporte", function() end)
+-- Função para detectar tecla personalizada
+local function setupCustomKey(keyLabel)
+    keyLabel.Text = "Pressione uma tecla..."
+    keyLabel.TextColor3 = Color3.new(1, 1, 0)
+    
+    local connection
+    connection = UserInputService.InputBegan:Connect(function(input, gameProcessed)
+        if gameProcessed then return end
+        
+        if input.UserInputType == Enum.UserInputType.Keyboard then
+            teleportKey = input.KeyCode.Name
+            keyLabel.Text = "TECLA: " .. teleportKey
+            keyLabel.TextColor3 = Color3.new(1, 1, 1)
+            connection:Disconnect()
+        elseif input.UserInputType == Enum.UserInputType.MouseButton1 then
+            teleportKey = "MouseButton1"
+            keyLabel.Text = "TECLA: BOTÃO ESQUERDO"
+            keyLabel.TextColor3 = Color3.new(1, 1, 1)
+            connection:Disconnect()
+        elseif input.UserInputType == Enum.UserInputType.MouseButton2 then
+            teleportKey = "MouseButton2"
+            keyLabel.Text = "TECLA: BOTÃO DIREITO"
+            keyLabel.TextColor3 = Color3.new(1, 1, 1)
+            connection:Disconnect()
+        end
+    end)
+end
 
-UIS.InputBegan:Connect(function(input, gpe)
-    if gpe then return end
-    if input.KeyCode == teleKey and habilidades["Teleporte"].isActive() then
-        local pos = Mouse.Hit.Position + Vector3.new(0,3,0)
-        Character:SetPrimaryPartCFrame(CFrame.new(pos))
+-- Função para criar GUI
+local function createGui()
+    if gui then gui:Destroy() end
+    
+    gui = Instance.new("ScreenGui")
+    gui.Name = "SkillsPanel"
+    gui.Parent = playerGui
+    gui.ResetOnSpawn = false
+    
+    mainFrame = Instance.new("Frame")
+    mainFrame.Size = UDim2.new(0, 380, 0, 480)
+    mainFrame.Position = UDim2.new(0.5, -190, 0.5, -240)
+    mainFrame.BackgroundColor3 = Color3.new(0.1,0.1,0.1)
+    mainFrame.BorderSizePixel = 0
+    mainFrame.Active = true
+    mainFrame.Draggable = true
+    mainFrame.Parent = gui
+    mainFrame.Visible = true
+    
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0,15)
+    corner.Parent = mainFrame
+    
+    local title = Instance.new("TextLabel")
+    title.Size = UDim2.new(1,0,0,45)
+    title.Position = UDim2.new(0,0,0,0)
+    title.BackgroundColor3 = Color3.new(0.2,0.2,0.2)
+    title.BorderSizePixel = 0
+    title.Text = "PAINEL DE HABILIDADES"
+    title.TextColor3 = Color3.new(1,1,1)
+    title.TextScaled = true
+    title.Font = Enum.Font.GothamBold
+    title.Parent = mainFrame
+    
+    local titleCorner = Instance.new("UICorner")
+    titleCorner.CornerRadius = UDim.new(0,15)
+    titleCorner.Parent = title
+    
+    -- Seção Teleporte
+    local teleportSection = Instance.new("Frame")
+    teleportSection.Size = UDim2.new(1,-20,0,120)
+    teleportSection.Position = UDim2.new(0,10,0,55)
+    teleportSection.BackgroundColor3 = Color3.new(0.15,0.15,0.15)
+    teleportSection.BorderSizePixel = 0
+    teleportSection.Parent = mainFrame
+    
+    local teleportCorner = Instance.new("UICorner")
+    teleportCorner.CornerRadius = UDim.new(0,10)
+    teleportCorner.Parent = teleportSection
+    
+    local teleportStatus = Instance.new("TextLabel")
+    teleportStatus.Size = UDim2.new(1,-10,0,20)
+    teleportStatus.Position = UDim2.new(0,5,0,5)
+    teleportStatus.BackgroundTransparency = 1
+    teleportStatus.Text = "STATUS: DESATIVADO"
+    teleportStatus.TextColor3 = Color3.new(1,0,0)
+    teleportStatus.TextScaled = true
+    teleportStatus.Font = Enum.Font.Gotham
+    teleportStatus.Parent = teleportSection
+    
+    local teleportToggle = Instance.new("TextButton")
+    teleportToggle.Size = UDim2.new(0.45,0,0,35)
+    teleportToggle.Position = UDim2.new(0.05,0,0,30)
+    teleportToggle.BackgroundColor3 = Color3.new(0.7,0,0)
+    teleportToggle.BorderSizePixel = 0
+    teleportToggle.Text = "ATIVAR"
+    teleportToggle.TextColor3 = Color3.new(1,1,1)
+    teleportToggle.TextScaled = true
+    teleportToggle.Font = Enum.Font.GothamBold
+    teleportToggle.Parent = teleportSection
+    
+    local keyLabel = Instance.new("TextLabel")
+    keyLabel.Size = UDim2.new(1,-10,0,20)
+    keyLabel.Position = UDim2.new(0,5,0,70)
+    keyLabel.BackgroundTransparency = 1
+    keyLabel.Text = "TECLA: "..teleportKey
+    keyLabel.TextColor3 = Color3.new(1,1,1)
+    keyLabel.TextScaled = true
+    keyLabel.Font = Enum.Font.Gotham
+    keyLabel.Parent = teleportSection
+    
+    local chooseKey = Instance.new("TextButton")
+    chooseKey.Size = UDim2.new(1,-10,0,25)
+    chooseKey.Position = UDim2.new(0,5,0,95)
+    chooseKey.BackgroundColor3 = Color3.new(0.3,0.3,0.3)
+    chooseKey.BorderSizePixel = 0
+    chooseKey.Text = "ESCOLHER NOVA TECLA"
+    chooseKey.TextColor3 = Color3.new(1,1,1)
+    chooseKey.TextScaled = true
+    chooseKey.Font = Enum.Font.Gotham
+    chooseKey.Parent = teleportSection
+    
+    -- Seção Velocidade
+    local speedSection = Instance.new("Frame")
+    speedSection.Size = UDim2.new(1,-20,0,100)
+    speedSection.Position = UDim2.new(0,10,0,190)
+    speedSection.BackgroundColor3 = Color3.new(0.15,0.15,0.15)
+    speedSection.BorderSizePixel = 0
+    speedSection.Parent = mainFrame
+    
+    local speedStatus = Instance.new("TextLabel")
+    speedStatus.Size = UDim2.new(1,-10,0,20)
+    speedStatus.Position = UDim2.new(0,5,0,5)
+    speedStatus.BackgroundTransparency = 1
+    speedStatus.Text = "STATUS: DESATIVADO"
+    speedStatus.TextColor3 = Color3.new(1,0,0)
+    speedStatus.TextScaled = true
+    speedStatus.Font = Enum.Font.Gotham
+    speedStatus.Parent = speedSection
+    
+    local speedToggle = Instance.new("TextButton")
+    speedToggle.Size = UDim2.new(0.45,0,0,35)
+    speedToggle.Position = UDim2.new(0.05,0,0,30)
+    speedToggle.BackgroundColor3 = Color3.new(0.7,0,0)
+    speedToggle.BorderSizePixel = 0
+    speedToggle.Text = "ATIVAR"
+    speedToggle.TextColor3 = Color3.new(1,1,1)
+    speedToggle.TextScaled = true
+    speedToggle.Font = Enum.Font.GothamBold
+    speedToggle.Parent = speedSection
+    
+    local speedBox = Instance.new("TextBox")
+    speedBox.Size = UDim2.new(0.45,0,0,35)
+    speedBox.Position = UDim2.new(0.5,0,0,30)
+    speedBox.BackgroundColor3 = Color3.new(0.2,0.2,0.2)
+    speedBox.BorderSizePixel = 0
+    speedBox.Text = tostring(currentSpeed)
+    speedBox.PlaceholderText = "Velocidade"
+    speedBox.TextColor3 = Color3.new(1,1,1)
+    speedBox.TextScaled = true
+    speedBox.Font = Enum.Font.Gotham
+    speedBox.Parent = speedSection
+    
+    -- Seção Noclip
+    local noclipSection = Instance.new("Frame")
+    noclipSection.Size = UDim2.new(1,-20,0,60)
+    noclipSection.Position = UDim2.new(0,10,0,310)
+    noclipSection.BackgroundColor3 = Color3.new(0.15,0.15,0.15)
+    noclipSection.BorderSizePixel = 0
+    noclipSection.Parent = mainFrame
+    
+    local noclipStatus = Instance.new("TextLabel")
+    noclipStatus.Size = UDim2.new(1,-10,0,20)
+    noclipStatus.Position = UDim2.new(0,5,0,5)
+    noclipStatus.BackgroundTransparency = 1
+    noclipStatus.Text = "Noclip: DESATIVADO"
+    noclipStatus.TextColor3 = Color3.new(1,0,0)
+    noclipStatus.TextScaled = true
+    noclipStatus.Font = Enum.Font.Gotham
+    noclipStatus.Parent = noclipSection
+    
+    local noclipToggle = Instance.new("TextButton")
+    noclipToggle.Size = UDim2.new(1,-10,0,35)
+    noclipToggle.Position = UDim2.new(0,5,0,25)
+    noclipToggle.BackgroundColor3 = Color3.new(0.7,0,0)
+    noclipToggle.BorderSizePixel = 0
+    noclipToggle.Text = "ATIVAR"
+    noclipToggle.TextColor3 = Color3.new(1,1,1)
+    noclipToggle.TextScaled = true
+    noclipToggle.Font = Enum.Font.GothamBold
+    noclipToggle.Parent = noclipSection
+    
+    -- Botões funcionalidade
+    teleportToggle.MouseButton1Click:Connect(function()
+        teleportEnabled = not teleportEnabled
+        teleportStatus.Text = teleportEnabled and "STATUS: ATIVO" or "STATUS: DESATIVADO"
+        teleportStatus.TextColor3 = teleportEnabled and Color3.new(0,1,0) or Color3.new(1,0,0)
+    end)
+    
+    chooseKey.MouseButton1Click:Connect(function()
+        setupCustomKey(keyLabel)
+    end)
+    
+    speedToggle.MouseButton1Click:Connect(function()
+        speedEnabled = not speedEnabled
+        speedStatus.Text = speedEnabled and "STATUS: ATIVO" or "STATUS: DESATIVADO"
+        speedStatus.TextColor3 = speedEnabled and Color3.new(0,1,0) or Color3.new(1,0,0)
+        updateSpeed()
+    end)
+    
+    speedBox.FocusLost:Connect(function()
+        local value = tonumber(speedBox.Text)
+        if value and value > 0 and value <= 500 then
+            currentSpeed = value
+            if speedEnabled then updateSpeed() end
+        else
+            speedBox.Text = tostring(currentSpeed)
+        end
+    end)
+    
+    noclipToggle.MouseButton1Click:Connect(function()
+        noclipEnabled = not noclipEnabled
+        noclipStatus.Text = noclipEnabled and "Noclip: ATIVADO" or "Noclip: DESATIVADO"
+        noclipStatus.TextColor3 = noclipEnabled and Color3.new(0,1,0) or Color3.new(1,0,0)
+        toggleNoclip(noclipEnabled)
+    end)
+    
+    return mainFrame
+end
+
+-- Função toggle GUI
+function toggleGui()
+    if not gui or not gui.Parent then
+        createGui()
+        isGuiOpen = true
+    else
+        isGuiOpen = not isGuiOpen
+        if mainFrame then mainFrame.Visible = isGuiOpen end
+    end
+end
+
+-- Input handling
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if gameProcessed then return end
+    
+    if input.KeyCode == Enum.KeyCode.G then
+        toggleGui()
+    end
+    
+    if teleportEnabled then
+        if input.KeyCode.Name == teleportKey then
+            teleportToMousePosition()
+        elseif teleportKey == "MouseButton1" and input.UserInputType == Enum.UserInputType.MouseButton1 then
+            teleportToMousePosition()
+        elseif teleportKey == "MouseButton2" and input.UserInputType == Enum.UserInputType.MouseButton2 then
+            teleportToMousePosition()
+        end
     end
 end)
 
--- AutoAim
-habilidades["AutoAim"] = criarBotao("AutoAim", function(ativo)
-    print("AutoAim "..(ativo and "ativado" or "desativado"))
+-- Reaplicar velocidade e noclip após respawn
+player.CharacterAdded:Connect(function(character)
+    local humanoid = character:WaitForChild("Humanoid")
+    originalWalkSpeed = humanoid.WalkSpeed
+    wait(1)
+    if speedEnabled then updateSpeed() end
+    if noclipEnabled then toggleNoclip(true) end
 end)
 
--- KillAura
-habilidades["KillAura"] = criarBotao("KillAura", function(ativo)
-    print("KillAura "..(ativo and "ativado" or "desativado"))
-end)
-
--- Multiplicador de Dano
-habilidades["Multiplicador"] = criarBotao("Multiplicador de Dano", function(ativo)
-    print("Multiplicador "..(ativo and "ativado" or "desativado"))
-end)
-
--- Regeneração Rápida
-habilidades["Regeneração"] = criarBotao("Regeneração Rápida", function(ativo)
-    if ativo then
-        spawn(function()
-            while habilidades["Regeneração"].isActive() do
-                Humanoid.Health = math.min(Humanoid.MaxHealth, Humanoid.Health + 5)
-                wait(0.5)
-            end
-        end)
-    end
-end)
-
--- Knockback
-local knockbackSlider = criarSlider("Knockback", 10, 500, 50)
-habilidades["Knockback"] = criarBotao("Knockback", function(ativo)
-    print("Knockback "..(ativo and "ativado" or "desativado"))
-end)
-
--- Mostrar/Ocultar painel com G
-local toggleKey = Enum.KeyCode.G
-UserInputService.InputBegan:Connect(function(input, gpe)
-    if gpe then return end
-    if input.KeyCode == toggleKey then
-        MainFrame.Visible = not MainFrame.Visible
-    end
-end)
+print("🎮 Painel de Habilidades carregado com Noclip!")
